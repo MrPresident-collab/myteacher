@@ -3,7 +3,7 @@
 
 MyTeacher is a modern language-learning platform built to connect learners with qualified language teachers, learning groups, and personalized learning opportunities.
 
-The project is being developed with the Angolan and wider Lusophone (portuguese speaking) market in mind, with a focus on making language learning more accessible, structured, and human.
+The project is developed with the Angolan and wider Lusophone (portuguese speaking) market in mind, with a focus on making language learning more accessible, structured, and human.
 
 📸 Preview
 
