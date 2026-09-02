@@ -1,75 +1,65 @@
-# React + TypeScript + Vite
+![MyTeacher homepage](./docs/screenshots/myteacher-preview.png)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-Currently, two official plugins are available:
+MyTeacher is a modern language-learning platform built to connect learners with qualified language teachers, learning groups, and personalized learning opportunities.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The project is being developed with the Angolan and wider Lusophone (portuguese speaking) market in mind, with a focus on making language learning more accessible, structured, and human.
 
-## React Compiler
+📸 Preview
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## Expanding the ESLint configuration
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+✨ More Insights :
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+MyTeacher is designed as a platform where learners can:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+🔎 Discover language teachers
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+👨‍🏫 Explore teacher profiles and specialties
 
-```
+👥 Join language-learning groups
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+📝 Request personalized learning support
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+📚 Practice through quizzes and learning activities
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+📅 Manage lessons and bookings
 
-```
+👤 Manage their learning profile
+
+Teachers can:
+
+Create and manage professional profiles
+
+Apply to become verified MyTeacher instructors
+
+Showcase languages, subjects, experience, and availability
+
+Manage their teaching activities
+
+
+The goal of MyTeacher is simple:
+
+Make learning a new language easier to start, easier to personalize, and easier to stick with.
+
+The long-term vision is to build a trusted language-learning ecosystem connecting learners, teachers, groups, and organizations across Angola and the Lusophone market.
+
+
+
+👨‍💻 Built With
+
+Built as an independent software project with a strong focus on:
+
+Modern web development
+
+Clean user experience
+
+Scalable application architecture
+
+Secure backend integration
+
+Continuous learning and iteration
+
+
+
+MyTeacher — Aprender línguas sem fronteiras.
