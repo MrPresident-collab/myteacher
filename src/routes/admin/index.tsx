@@ -21,8 +21,6 @@ import {
   getTeachers,
   getGroups,
   updateTeacherVerification,
-  MOCK_TEACHERS,
-  MOCK_GROUPS,
 } from "@/lib/api";
 import type { TeacherProfile, Group, TeacherVerificationStatus } from "@/types";
 
@@ -50,8 +48,8 @@ function AdminDashboardContent() {
     monthlyVolumeKz: 2850000,
   });
 
-  const [teachersList, setTeachersList] = useState<TeacherProfile[]>(MOCK_TEACHERS);
-  const [groupsList, setGroupsList] = useState<Group[]>(MOCK_GROUPS);
+  const [teachersList, setTeachersList] = useState<TeacherProfile[]>([]);
+  const [groupsList, setGroupsList] = useState<Group[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Application Review Modal / Drawer State

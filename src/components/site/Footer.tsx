@@ -211,7 +211,7 @@ export function Footer() {
       {/* COPYRIGHT */}
       <div className="border-t border-white/10 px-5 py-6 text-center text-xs text-white/45 flex flex-col sm:flex-row items-center justify-between max-w-7xl mx-auto">
         <span>© {new Date().getFullYear()} MyTeacher · Todos os direitos reservados.</span>
-        <span className="mt-2 sm:mt-0">Inicialmente em Angola · Pronto para mercados lusófonos</span>
+        <span className="mt-2 sm:mt-0">Aprender línguas sem fronteiras</span>
       </div>
     </footer>
   );
