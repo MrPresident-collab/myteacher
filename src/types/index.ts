@@ -295,9 +295,18 @@ export type AdminAuditLog = {
   id: string;
   admin_id: string;
   action: string;
-  target_entity_type: "teacher" | "learner" | "group" | "application" | "settings";
+  target_entity_type:
+    | "teacher"
+    | "learner"
+    | "group"
+    | "learning_request"
+    | "teacher_document"
+    | "application"
+    | "notification"
+    | "settings"
+    | string;
   target_entity_id: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
   ip_address?: string;
   created_at: string;
   admin?: Profile;

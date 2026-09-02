@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Flag } from "@/components/common/Flag";
 import { LANGUAGES, type LanguageCode } from "@/lib/languages";
-import { HelpCircle, CheckCircle2, RotateCcw, ArrowRight, Sparkles, BookOpen, Briefcase, Plane } from "lucide-react";
+import { HelpCircle, CheckCircle2, RotateCcw, ArrowRight, Sparkles, BookOpen, Briefcase, Plane, type LucideIcon } from "lucide-react";
 
 type Category = "grammar" | "vocabulary" | "business" | "travel";
 
@@ -15,7 +15,7 @@ interface QuizItem {
   explanation: string;
 }
 
-const CATEGORIES: { id: Category; label: string; icon: any }[] = [
+const CATEGORIES: { id: Category; label: string; icon: LucideIcon }[] = [
   { id: "grammar", label: "Gramática", icon: BookOpen },
   { id: "vocabulary", label: "Vocabulário", icon: Sparkles },
   { id: "business", label: "Negócios & Trabalho", icon: Briefcase },

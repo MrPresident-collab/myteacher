@@ -58,8 +58,9 @@ export function RegisterPage() {
       } else {
         navigate({ to: "/onboarding" });
       }
-    } catch (err: any) {
-      setError(err.message || "Erro de ligação ao servidor.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Erro de ligação ao servidor.";
+      setError(message);
     } finally {
       setLoading(false);
     }

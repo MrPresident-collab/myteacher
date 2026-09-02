@@ -20,13 +20,18 @@ import {
   getAdminStats,
   getTeachers,
   getGroups,
+  getLearningRequests,
+  getTeacherDocuments,
+  getAdminAuditLogs,
+  matchLearningRequest,
+  reviewTeacherApplication,
   updateTeacherVerification,
 } from "@/lib/api";
-import type { TeacherProfile, Group, TeacherVerificationStatus } from "@/types";
+import type { TeacherProfile, Group, LearningRequest, TeacherVerificationStatus, AdminAuditLog, TeacherDocument } from "@/types";
 
 export function AdminDashboardPage() {
   return (
-    <ProtectedRoute allowedRoles={["admin", "student", "teacher"]}>
+    <ProtectedRoute allowedRoles={["admin"]}>
       <AdminDashboardContent />
     </ProtectedRoute>
   );
@@ -50,6 +55,9 @@ function AdminDashboardContent() {
 
   const [teachersList, setTeachersList] = useState<TeacherProfile[]>([]);
   const [groupsList, setGroupsList] = useState<Group[]>([]);
+  const [learningRequests, setLearningRequests] = useState<LearningRequest[]>([]);
+  const [auditLogs, setAuditLogs] = useState<Array<AdminAuditLog & { admin?: { full_name?: string } }>>([]);
+  const [documentsForReview, setDocumentsForReview] = useState<TeacherDocument[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Application Review Modal / Drawer State
@@ -59,7 +67,7 @@ function AdminDashboardContent() {
   const [newGroup, setNewGroup] = useState({
     name: "",
     language_code: "english" as LanguageCode,
-    level: "beginner" as any,
+    level: "beginner" as Group["level"],
     teacher_id: "teacher-1",
     schedule_description: "Segundas e Quartas · 18:30 às 19:30",
     modality: "online" as "online" | "presencial",
@@ -67,10 +75,52 @@ function AdminDashboardContent() {
   });
 
   useEffect(() => {
-    getAdminStats().then(setStats).catch(console.error);
-    getTeachers().then(setTeachersList).catch(console.error);
-    getGroups().then(setGroupsList).catch(console.error);
+    Promise.all([
+      getAdminStats(),
+      getTeachers(),
+      getGroups(),
+      getLearningRequests({ status: "pending" }),
+      getAdminAuditLogs(),
+    ])
+      .then(([adminStats, teachersData, groupsData, requestsData, logsData]) => {
+        setStats(adminStats);
+        setTeachersList(teachersData);
+        setGroupsList(groupsData);
+        setLearningRequests(requestsData);
+        setAuditLogs(logsData);
+      })
+      .catch(console.error);
   }, []);
+
+  async function handleViewDocuments(teacherId: string) {
+    try {
+      const docs = await getTeacherDocuments(teacherId);
+      setDocumentsForReview(docs);
+    } catch (error) {
+      console.error(error);
+      setFeedback("Não foi possível carregar os documentos de verificação.");
+    }
+  }
+
+  async function handleReviewDecision(teacherId: string, status: TeacherVerificationStatus, notes?: string) {
+    if (!user) return;
+
+    const result = await reviewTeacherApplication({
+      teacherId,
+      adminId: user.id,
+      status,
+      notes,
+      documentReview: true,
+    });
+
+    if (result.success) {
+      setTeachersList((prev) => prev.map((teacher) => teacher.id === teacherId ? { ...teacher, verification_status: status } : teacher));
+      setFeedback(`Candidatura atualizada para ${status}.`);
+      setSelectedTeacherForReview(null);
+    } else {
+      setFeedback(result.error || "Não foi possível atualizar o estado da candidatura.");
+    }
+  }
 
   async function handleUpdateStatus(teacherId: string, status: TeacherVerificationStatus) {
     if (!user) return;
@@ -119,6 +169,17 @@ function AdminDashboardContent() {
       modality: "online",
       price_per_month: 28000,
     });
+  }
+
+  async function handleMatchRequest(requestId: string) {
+    if (!user) return;
+
+    const result = await matchLearningRequest(requestId, user.id);
+    setFeedback(result.message);
+
+    if (result.success) {
+      setLearningRequests((prev) => prev.filter((request) => request.id !== requestId));
+    }
   }
 
   return (
@@ -258,7 +319,10 @@ function AdminDashboardContent() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setSelectedTeacherForReview(teacher)}
+                          onClick={() => {
+                            setSelectedTeacherForReview(teacher);
+                            void handleViewDocuments(teacher.id);
+                          }}
                           className="rounded-full border border-[var(--border)] bg-[var(--background)] px-4 py-1.5 text-xs font-bold hover:bg-[var(--secondary)]"
                         >
                           Analisar Dossier
@@ -320,21 +384,21 @@ function AdminDashboardContent() {
                       <div className="flex flex-wrap gap-2 shrink-0">
                         <button
                           type="button"
-                          onClick={() => handleUpdateStatus(teacher.id, "verified")}
+                          onClick={() => void handleReviewDecision(teacher.id, "verified", "Documento validado e perfil aprovado.")}
                           className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700"
                         >
                           Verificar (Badge)
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleUpdateStatus(teacher.id, "needs_information")}
+                          onClick={() => void handleReviewDecision(teacher.id, "needs_information", "Falta documentação ou confirmação de formação.")}
                           className="rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"
                         >
                           Pedir Mais Info
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleUpdateStatus(teacher.id, "rejected")}
+                          onClick={() => void handleReviewDecision(teacher.id, "rejected", "Perfil não cumpre requisitos mínimos de verificação.")}
                           className="rounded-full border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50"
                         >
                           Rejeitar
@@ -510,28 +574,101 @@ function AdminDashboardContent() {
               </p>
 
               <div className="mt-4 divide-y divide-[var(--border)]">
-                {[
-                  { name: "Ana Paula Silva", lang: "english", level: "Iniciante", type: "Grupo", date: "Hoje, 10:15" },
-                  { name: "Domingos Cassule", lang: "mandarin", level: "Iniciante", type: "1:1", date: "Ontem, 16:40" },
-                ].map((req, idx) => (
-                  <div key={idx} className="py-4 flex items-center justify-between">
-                    <div>
-                      <p className="font-bold text-sm">{req.name}</p>
-                      <div className="flex items-center gap-2 text-xs text-[var(--muted)] mt-0.5">
-                        <Flag code={req.lang} size="sm" />
-                        <span>{req.level} · {req.type}</span>
-                        <span>· {req.date}</span>
+                {learningRequests.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--background)] p-5 text-sm text-[var(--muted)]">
+                    Não há pedidos pendentes para emparelhamento.
+                  </div>
+                ) : (
+                  learningRequests.map((req) => (
+                    <div key={req.id} className="py-4 flex items-center justify-between gap-4">
+                      <div>
+                        <p className="font-bold text-sm">{req.learner_name || "Aluno"}</p>
+                        <div className="flex items-center gap-2 text-xs text-[var(--muted)] mt-0.5 flex-wrap">
+                          <Flag code={req.language_code} size="sm" />
+                          <span>{req.level} · {req.lesson_type}</span>
+                          <span>· {req.modality}</span>
+                          <span>· {new Date(req.created_at).toLocaleString("pt-AO", { dateStyle: "short", timeStyle: "short" })}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleMatchRequest(req.id)}
+                        className="rounded-full bg-[var(--primary)] px-4 py-1.5 text-xs font-bold text-white hover:bg-[var(--primary-dark)]"
+                      >
+                        Emparelhar Professor
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "settings" && (
+            <div className="space-y-6">
+              <div className="rounded-3xl border border-[var(--border)] bg-white p-6 shadow-xs space-y-6 max-w-3xl">
+                <div>
+                  <h2 className="font-display text-xl font-bold">Configuração de Mercados & Moedas</h2>
+                  <p className="text-xs text-[var(--muted)] mt-1">
+                    Arquitetura data-driven para expansão em países de língua oficial portuguesa.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {REGIONAL_MARKETS.map((market) => (
+                    <div
+                      key={market.code}
+                      className="flex items-center justify-between rounded-2xl border border-[var(--border)] p-4 bg-[var(--background)]"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Flag code={market.code} size="md" />
+                        <div>
+                          <span className="font-bold text-sm block">{market.name}</span>
+                          <span className="text-xs text-[var(--muted)]">
+                            Moeda: {market.currencyCode} ({market.currencySymbol}) · Indicativo: {market.phonePrefix}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
+                        {market.active ? (
+                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                            Mercado Ativo
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-500">
+                            Pronto para Expansão
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setFeedback(`Professor emparelhado com sucesso para ${req.name}`)}
-                      className="rounded-full bg-[var(--primary)] px-4 py-1.5 text-xs font-bold text-white hover:bg-[var(--primary-dark)]"
-                    >
-                      Emparelhar Professor
-                    </button>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-[var(--border)] bg-white p-6 shadow-xs space-y-4 max-w-3xl">
+                <h3 className="font-display text-lg font-bold">Registo de Auditoria</h3>
+                <div className="space-y-3 divide-y divide-[var(--border)]">
+                  {auditLogs.length === 0 ? (
+                    <p className="text-sm text-[var(--muted)]">Nenhuma operação administrativa registada ainda.</p>
+                  ) : (
+                    auditLogs.map((log) => (
+                      <div key={log.id} className="pt-3 first:pt-0">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold">{log.action}</p>
+                            <p className="text-xs text-[var(--muted)]">
+                              {log.admin?.full_name || "Administrador"} · {new Date(log.created_at).toLocaleString("pt-AO", { dateStyle: "short", timeStyle: "short" })}
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-[var(--secondary)] px-2 py-1 text-[10px] font-bold uppercase">
+                            {log.target_entity_type}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -617,19 +754,40 @@ function AdminDashboardContent() {
                   ))}
                 </div>
               </div>
+
+              {documentsForReview.length > 0 && (
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--background)] p-3">
+                  <p className="font-bold text-xs uppercase text-[var(--muted)]">Documentos de Verificação</p>
+                  <div className="mt-2 space-y-2">
+                    {documentsForReview.map((doc) => (
+                      <div key={doc.id} className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-white px-3 py-2">
+                        <div>
+                          <p className="text-xs font-bold">{doc.document_type}</p>
+                          <p className="text-[11px] text-[var(--muted)]">{doc.file_name}</p>
+                        </div>
+                        {doc.file_url && (
+                          <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-[var(--primary)] underline">
+                            Ver
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="border-t border-[var(--border)] pt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                onClick={() => handleUpdateStatus(selectedTeacherForReview.id, "verified")}
+                onClick={() => void handleReviewDecision(selectedTeacherForReview.id, "verified", "Documento validado e perfil aprovado.")}
                 className="rounded-full bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700"
               >
                 Aprovar & Ativar Selo Verificado
               </button>
               <button
                 type="button"
-                onClick={() => handleUpdateStatus(selectedTeacherForReview.id, "needs_information")}
+                onClick={() => void handleReviewDecision(selectedTeacherForReview.id, "needs_information", "Falta documentação ou confirmação de formação.")}
                 className="rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"
               >
                 Solicitar Mais Documentos

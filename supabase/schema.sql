@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_profiles (
   bio TEXT,
   teaching_experience_years INT DEFAULT 1,
   teaching_style TEXT,
-  lesson_types TEXT NOT NULL DEFAULT 'both', -- 'private', 'group', 'both'
+  lesson_types TEXT NOT NULL DEFAULT 'both' CHECK (lesson_types IN ('private', 'group', 'both')),
   online_enabled BOOLEAN NOT NULL DEFAULT true,
   in_person_enabled BOOLEAN NOT NULL DEFAULT false,
   online_hourly_price NUMERIC(12, 2) DEFAULT 7500.00,
@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_profiles (
   verification_status teacher_verification_status NOT NULL DEFAULT 'draft',
   verified_at TIMESTAMPTZ,
   verified_by UUID REFERENCES public.profiles(id),
-  rating NUMERIC(3, 2) NOT NULL DEFAULT 5.00,
+  rating NUMERIC(3, 2) NOT NULL DEFAULT 0.00 CHECK (rating >= 0 AND rating <= 5),
   review_count INT NOT NULL DEFAULT 0,
   total_lessons_completed INT NOT NULL DEFAULT 0,
   profile_completion_percentage INT NOT NULL DEFAULT 60,
@@ -310,6 +310,21 @@ CREATE TABLE IF NOT EXISTS public.admin_audit_logs (
   ip_address TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+CREATE INDEX IF NOT EXISTS idx_teacher_profiles_verification_status
+  ON public.teacher_profiles (verification_status, active);
+CREATE INDEX IF NOT EXISTS idx_teacher_profiles_city
+  ON public.teacher_profiles (city, province);
+CREATE INDEX IF NOT EXISTS idx_learning_requests_status_created_at
+  ON public.learning_requests (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_group_memberships_group_status
+  ON public.group_memberships (group_id, status);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+  ON public.notifications (user_id, read, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_teacher_documents_teacher_status
+  ON public.teacher_documents (teacher_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_actor_created_at
+  ON public.admin_audit_logs (admin_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.corporate_leads (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -517,6 +532,38 @@ CREATE POLICY "Admins have full access on admin_audit_logs" ON public.admin_audi
 );
 CREATE POLICY "Admins have full access on corporate_leads" ON public.corporate_leads FOR ALL USING (
   EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('teacher-documents', 'teacher-documents', false)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE POLICY "Teachers can manage their own verification documents"
+ON storage.objects FOR ALL
+USING (
+  bucket_id = 'teacher-documents'
+  AND split_part(name, '/', 1) = auth.uid()::text
+)
+WITH CHECK (
+  bucket_id = 'teacher-documents'
+  AND split_part(name, '/', 1) = auth.uid()::text
+);
+
+CREATE POLICY "Admins can manage all verification documents"
+ON storage.objects FOR ALL
+USING (
+  bucket_id = 'teacher-documents'
+  AND EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE p.id = auth.uid() AND p.role = 'admin'
+  )
+)
+WITH CHECK (
+  bucket_id = 'teacher-documents'
+  AND EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE p.id = auth.uid() AND p.role = 'admin'
+  )
 );
 
 -- ------------------------------------------------------------

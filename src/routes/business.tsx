@@ -27,13 +27,15 @@ export function BusinessPage() {
   });
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    setError(null);
     setLoading(true);
 
     try {
-      await createCorporateLead({
+      const result = await createCorporateLead({
         companyName: formData.companyName,
         contactName: formData.contactName,
         email: formData.email,
@@ -42,10 +44,16 @@ export function BusinessPage() {
         employeeCount: formData.employeeCount,
         notes: formData.notes,
       });
+
+      if (!result.success) {
+        throw new Error(result.error || "Não foi possível enviar o pedido da sua empresa.");
+      }
+
       setSubmitted(true);
     } catch (err) {
-      console.error(err);
-      setSubmitted(true); // Graceful fallback
+      const message = err instanceof Error ? err.message : "Não foi possível enviar o pedido da sua empresa.";
+      console.error("Error creating corporate lead:", err);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -224,6 +232,11 @@ export function BusinessPage() {
             </div>
           ) : (
             <form className="mt-10 grid gap-4" onSubmit={handleSubmit}>
+              {error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
               <div className="grid gap-4 md:grid-cols-2">
                 <input
                   type="text"

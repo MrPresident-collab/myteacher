@@ -32,6 +32,7 @@ export function ContactTeacherPage() {
 
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     name: profile?.full_name || "",
@@ -56,10 +57,11 @@ export function ContactTeacherPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError(null);
     setLoading(true);
 
     try {
-      await createLearningRequest({
+      const result = await createLearningRequest({
         learner_id: user?.id,
         learner_name: form.name,
         learner_email: form.email,
@@ -74,10 +76,16 @@ export function ContactTeacherPage() {
         schedule_preference: form.schedule,
         notes: form.notes,
       });
+
+      if (!result.success || !result.data) {
+        throw new Error(result.error || "Não foi possível enviar o pedido de aula.");
+      }
+
       setSubmitted(true);
     } catch (err) {
-      console.error(err);
-      setSubmitted(true); // Graceful fallback
+      const message = err instanceof Error ? err.message : "Não foi possível enviar o pedido de aula.";
+      console.error("Error creating learning request:", err);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -146,6 +154,11 @@ export function ContactTeacherPage() {
         onSubmit={handleSubmit}
         className="rounded-[2.5rem] border border-[var(--border)] bg-white p-6 shadow-sm sm:p-10 space-y-8"
       >
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </div>
+        )}
         {/* IDENTIFICATION */}
         {!user && (
           <div className="border-b border-[var(--border)] pb-8 space-y-4">

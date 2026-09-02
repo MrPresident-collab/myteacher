@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type {
+  AdminAuditLog,
   Group,
   LearnerLanguage,
   LearningRequest,
@@ -7,6 +8,7 @@ import type {
   OnboardingData,
   Profile,
   QuizQuestion,
+  TeacherDocument,
   QuizResult,
   TeacherApplicationData,
   TeacherProfile,
@@ -601,6 +603,315 @@ export async function getPendingApplications(): Promise<TeacherProfile[]> {
   return (data || []) as TeacherProfile[];
 }
 
+export async function getTeacherDocuments(teacherId: string): Promise<TeacherDocument[]> {
+  const { data, error } = await supabase
+    .from("teacher_documents")
+    .select("*")
+    .eq("teacher_id", teacherId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching teacher documents:", error.message);
+    throw new Error(error.message);
+  }
+
+  return (data || []) as TeacherDocument[];
+}
+
+export async function uploadTeacherDocument(input: {
+  teacherId: string;
+  documentType: TeacherDocument["document_type"];
+  file: File;
+}): Promise<{ success: boolean; url?: string; error?: string }> {
+  const sanitizedFileName = input.file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `${input.teacherId}/${input.documentType}/${Date.now()}-${sanitizedFileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("teacher-documents")
+    .upload(storagePath, input.file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: input.file.type || "application/octet-stream",
+    });
+
+  if (uploadError) {
+    console.error("Error uploading teacher document:", uploadError.message);
+    return { success: false, error: uploadError.message };
+  }
+
+  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    .from("teacher-documents")
+    .createSignedUrl(storagePath, 3600);
+
+  if (signedUrlError) {
+    console.error("Error creating signed teacher document URL:", signedUrlError.message);
+    return { success: false, error: signedUrlError.message };
+  }
+
+  const { error: dbError } = await supabase.from("teacher_documents").insert({
+    teacher_id: input.teacherId,
+    document_type: input.documentType,
+    file_name: input.file.name,
+    file_url: signedUrlData.signedUrl,
+    status: "pending",
+    file_size: input.file.size,
+  });
+
+  if (dbError) {
+    console.error("Error persisting teacher document metadata:", dbError.message);
+    return { success: false, error: dbError.message };
+  }
+
+  return { success: true, url: signedUrlData.signedUrl };
+}
+
+export async function createNotification(input: {
+  userId: string;
+  title: string;
+  message: string;
+  type?: Notification["type"];
+  actionUrl?: string;
+}): Promise<Notification | null> {
+  const { data, error } = await supabase
+    .from("notifications")
+    .insert({
+      user_id: input.userId,
+      title: input.title,
+      message: input.message,
+      type: input.type || "info",
+      action_url: input.actionUrl,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating notification:", error.message);
+    return null;
+  }
+
+  return data as Notification;
+}
+
+export async function getAdminAuditLogs(): Promise<Array<AdminAuditLog & { admin?: Profile }>> {
+  const { data, error } = await supabase
+    .from("admin_audit_logs")
+    .select(`
+      *,
+      admin:profiles(*)
+    `)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.error("Error fetching admin audit logs:", error.message);
+    throw new Error(error.message);
+  }
+
+  return (data || []) as Array<AdminAuditLog & { admin?: Profile }>;
+}
+
+export async function getLearningRequests(options?: {
+  status?: LearningRequest["status"];
+}): Promise<LearningRequest[]> {
+  let query = supabase
+    .from("learning_requests")
+    .select(`
+      *,
+      teacher:teacher_profiles(
+        *,
+        profile:profiles(*),
+        languages:teacher_languages(
+          *,
+          language:languages(*)
+        )
+      ),
+      learner:profiles(*)
+    `)
+    .order("created_at", { ascending: false });
+
+  if (options?.status) {
+    query = query.eq("status", options.status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Error fetching learning requests:", error.message);
+    throw new Error(error.message);
+  }
+
+  return (data || []) as LearningRequest[];
+}
+
+export async function matchLearningRequest(requestId: string, adminId: string): Promise<{ success: boolean; message: string; teacherId?: string }> {
+  const { data: request, error: requestError } = await supabase
+    .from("learning_requests")
+    .select(`
+      *,
+      teacher:teacher_profiles(
+        *,
+        profile:profiles(*),
+        languages:teacher_languages(
+          *,
+          language:languages(*)
+        )
+      ),
+      learner:profiles(*)
+    `)
+    .eq("id", requestId)
+    .maybeSingle();
+
+  if (requestError || !request) {
+    return { success: false, message: "Pedido não encontrado." };
+  }
+
+  if (request.status === "matched" && request.matched_teacher_id) {
+    return { success: false, message: "Este pedido já foi emparelhado com um professor.", teacherId: request.matched_teacher_id };
+  }
+
+  const { data: candidates, error: teachersError } = await supabase
+    .from("teacher_profiles")
+    .select(`
+      *,
+      profile:profiles(*),
+      languages:teacher_languages(
+        *,
+        language:languages(*)
+      )
+    `)
+    .eq("active", true)
+    .in("verification_status", ["verified", "approved"])
+    .order("rating", { ascending: false });
+
+  if (teachersError) {
+    console.error("Error fetching teacher match candidates:", teachersError.message);
+    return { success: false, message: "Não foi possível carregar professores elegíveis." };
+  }
+
+  const teacherCandidates = (candidates || []) as TeacherProfile[];
+
+  const scoredCandidates = teacherCandidates
+    .map((teacher) => {
+      let score = 0;
+      const reasons: string[] = [];
+
+      const teachesLanguage = teacher.languages?.some((lang) => lang.language_code === request.language_code);
+      if (teachesLanguage) {
+        score += 60;
+        reasons.push("ensina a língua solicitada");
+      }
+
+      if (request.modality === "online" && teacher.online_enabled) {
+        score += 20;
+        reasons.push("aceita aulas online");
+      }
+      if (request.modality === "presencial" && teacher.in_person_enabled) {
+        score += 20;
+        reasons.push("aceita aulas presenciais");
+      }
+      if (request.modality === "online" && teacher.in_person_enabled) {
+        score += 5;
+      }
+
+      if (request.city && teacher.city && request.city.toLowerCase() === teacher.city.toLowerCase()) {
+        score += 15;
+        reasons.push("cidade compatível");
+      }
+      if (request.province && teacher.province && request.province.toLowerCase() === teacher.province.toLowerCase()) {
+        score += 10;
+        reasons.push("província compatível");
+      }
+
+      if (teacher.rating) {
+        score += Math.round(teacher.rating * 4);
+      }
+
+      if (request.lesson_type === "group" && (teacher.lesson_types === "group" || teacher.lesson_types === "both")) {
+        score += 10;
+        reasons.push("aceita aulas de grupo");
+      }
+      if (request.lesson_type === "1:1" && (teacher.lesson_types === "private" || teacher.lesson_types === "both")) {
+        score += 10;
+        reasons.push("aceita aulas 1:1");
+      }
+
+      if (!teachesLanguage) {
+        score -= 50;
+      }
+
+      return { teacher, score, reasons };
+    })
+    .filter((candidate) => candidate.teacher && (candidate.score > 0 || candidate.reasons.length > 0))
+    .sort((a, b) => b.score - a.score);
+
+  const selected = scoredCandidates[0]?.teacher;
+
+  if (!selected) {
+    return {
+      success: false,
+      message: "Nenhum professor verificado está disponível para este pedido no momento.",
+    };
+  }
+
+  const { error: matchError } = await supabase
+    .from("learning_requests")
+    .update({
+      status: "matched",
+      teacher_id: selected.id,
+      matched_teacher_id: selected.id,
+    })
+    .eq("id", requestId);
+
+  if (matchError) {
+    console.error("Error matching learning request:", matchError.message);
+    return { success: false, message: matchError.message || "Erro ao emparelhar professor." };
+  }
+
+  const { error: auditError } = await supabase.from("admin_audit_logs").insert({
+    admin_id: adminId,
+    action: "learning_request_matched",
+    target_entity_type: "learning_request",
+    target_entity_id: requestId,
+    details: {
+      selected_teacher_id: selected.id,
+      request_language: request.language_code,
+      request_modality: request.modality,
+      score: scoredCandidates[0]?.score || 0,
+      reasons: scoredCandidates[0]?.reasons || [],
+    },
+  });
+
+  if (auditError) {
+    console.error("Error logging admin action:", auditError.message);
+  }
+
+  if (request.learner_id) {
+    await createNotification({
+      userId: request.learner_id,
+      title: "Professor encontrado",
+      message: `Foi identificado um professor adequado para ${request.language_code} em ${request.modality}.`,
+      type: "success",
+      actionUrl: "/dashboard/aluno",
+    });
+  }
+
+  if (selected.id) {
+    await createNotification({
+      userId: selected.id,
+      title: "Novo pedido de aluno",
+      message: `Foi atribuída uma oportunidade de aula para ${request.language_code} com um aluno novo.`,
+      type: "action_required",
+      actionUrl: "/dashboard/professor",
+    });
+  }
+
+  return {
+    success: true,
+    teacherId: selected.id,
+    message: `Pedido emparelhado com ${selected.profile?.full_name || "o professor selecionado"}.`,
+  };
+}
+
 export async function updateTeacherVerification(input: {
   teacherId: string;
   adminId: string;
@@ -632,6 +943,50 @@ export async function updateTeacherVerification(input: {
 
   if (auditError) {
     console.error("Error logging admin action:", auditError.message);
+  }
+
+  const { data: teacherProfile } = await supabase
+    .from("teacher_profiles")
+    .select("*, profile:profiles(*)")
+    .eq("id", input.teacherId)
+    .maybeSingle();
+
+  if (teacherProfile?.id) {
+    await createNotification({
+      userId: teacherProfile.id,
+      title: "Actualização do estado da candidatura",
+      message: `O status da sua candidatura foi atualizado para ${input.status}. ${input.adminNotes ? `Nota: ${input.adminNotes}` : ""}`,
+      type: input.status === "verified" ? "success" : "warning",
+      actionUrl: "/dashboard/professor",
+    });
+  }
+
+  return { success: true };
+}
+
+export async function reviewTeacherApplication(input: {
+  teacherId: string;
+  adminId: string;
+  status: TeacherVerificationStatus;
+  notes?: string;
+  documentReview?: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  const result = await updateTeacherVerification({
+    teacherId: input.teacherId,
+    adminId: input.adminId,
+    status: input.status,
+    adminNotes: input.notes,
+  });
+
+  if (!result.success) {
+    return result;
+  }
+
+  if (input.documentReview) {
+    await supabase
+      .from("teacher_documents")
+      .update({ status: input.status === "verified" ? "approved" : "rejected", admin_notes: input.notes })
+      .eq("teacher_id", input.teacherId);
   }
 
   return { success: true };

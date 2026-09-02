@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -8,7 +9,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
-  role: UserRole;
+  role: UserRole | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (input: {
@@ -82,8 +83,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(data.session);
       await loadProfile();
       return { error: null };
-    } catch (err: any) {
-      return { error: err };
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error("Unable to sign in.");
+      return { error };
     }
   }
 
@@ -112,8 +114,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(data.session);
       await loadProfile();
       return { error: null, user: data.user };
-    } catch (err: any) {
-      return { error: err, user: null };
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error("Unable to create account.");
+      return { error, user: null };
     }
   }
 
@@ -128,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await loadProfile();
   }
 
-  const role: UserRole = profile?.role || (user?.user_metadata?.role as UserRole) || "student";
+  const role: UserRole | null = profile?.role ?? ((user?.user_metadata?.role as UserRole | undefined) ?? null);
 
   return (
     <AuthContext.Provider

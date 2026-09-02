@@ -397,7 +397,7 @@ function LearnerDashboardContent() {
                             <p className="text-xs text-[var(--muted)]">{teacher.city || "Luanda"}</p>
                             <div className="mt-1 flex items-center gap-1 text-xs font-bold text-amber-800">
                               <Star className="size-3 fill-amber-400 text-amber-500" />
-                              {Number(teacher.rating || 5.0).toFixed(1)}
+                              {Number(teacher.rating ?? 0).toFixed(1)}
                             </div>
                           </div>
                         </div>

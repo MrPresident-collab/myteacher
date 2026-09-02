@@ -24,6 +24,7 @@ export function TeacherRegistrationPage() {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState<TeacherApplicationData>({
     role: "teacher",
@@ -90,24 +91,32 @@ export function TeacherRegistrationPage() {
     if (!canContinue) return;
 
     if (step < TOTAL_STEPS) {
+      setError(null);
       setStep((s) => s + 1);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
+    setError(null);
     setSubmitting(true);
 
     try {
       if (user) {
-        await submitTeacherApplication(user.id, form);
+        const result = await submitTeacherApplication(user.id, form);
+
+        if (!result.success) {
+          throw new Error(result.error || "Não foi possível submeter a candidatura.");
+        }
+
         setSubmitted(true);
       } else {
         sessionStorage.setItem("myteacher_teacher_app", JSON.stringify(form));
         navigate({ to: "/auth/register" });
       }
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Não foi possível submeter a candidatura.";
       console.error("Error submitting teacher application:", err);
-      setSubmitted(true);
+      setError(message);
     } finally {
       setSubmitting(false);
     }
@@ -192,6 +201,12 @@ export function TeacherRegistrationPage() {
 
         {/* MAIN APPLICATION STEPS */}
         <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center py-8">
+          {error && (
+            <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
           {/* STEP 1: PERSONAL & LOCATION */}
           {step === 1 && (
             <div className="space-y-6">

@@ -11,6 +11,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, role, isLoading } = useAuth();
+  const hasRequiredRole = !allowedRoles || (role !== null && allowedRoles.includes(role));
 
   if (isLoading) {
     return (
@@ -55,7 +56,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
-  if (allowedRoles && !allowedRoles.includes(role)) {
+  if (allowedRoles && !hasRequiredRole) {
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-lg items-center px-4 py-16">
         <div className="w-full rounded-3xl border border-[var(--border)] bg-white p-8 text-center shadow-lg">

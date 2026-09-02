@@ -130,7 +130,7 @@ export function TeacherProfilePage() {
               )}
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
                 <Star className="size-3.5 fill-amber-400 text-amber-500" />
-                {Number(teacher.rating || 5.0).toFixed(1)} ({teacher.review_count || 0} avaliações)
+                {Number(teacher.rating ?? 0).toFixed(1)} ({teacher.review_count || 0} avaliações)
               </span>
             </div>
 

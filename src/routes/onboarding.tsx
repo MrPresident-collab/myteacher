@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -15,6 +15,7 @@ import {
   Heart,
   HelpCircle,
   Loader2,
+  type LucideIcon,
 } from "lucide-react";
 
 import { Flag } from "@/components/common/Flag";
@@ -37,7 +38,7 @@ const LEVEL_CONFIG: { id: LanguageLevel; label: string; description: string }[] 
   { id: "unknown", label: "Não tenho a certeza", description: "Prefiro fazer um teste de diagnóstico com o professor." },
 ];
 
-const GOAL_CONFIG: { id: LearningGoal; label: string; description: string; icon: any }[] = [
+const GOAL_CONFIG: { id: LearningGoal; label: string; description: string; icon: LucideIcon }[] = [
   { id: "personal", label: "Desenvolvimento Pessoal", description: "Interesse cultural, viagens, hobbies e crescimento individual.", icon: Heart },
   { id: "school", label: "Estudos & Universidade", description: "Preparação para aulas, exames, intercâmbios ou bolsas.", icon: GraduationCap },
   { id: "work", label: "Trabalho & Negócios", description: "Reuniões, correspondência executiva, carreira internacional e clientes.", icon: Briefcase },
@@ -71,12 +72,6 @@ export function OnboardingPage() {
     weeklyHours: 3,
     groupLearning: isDirectGroupIntent ? "interested" : undefined,
   });
-
-  useEffect(() => {
-    if (isDirectGroupIntent) {
-      setData((prev) => ({ ...prev, groupLearning: "interested" }));
-    }
-  }, [isDirectGroupIntent]);
 
   const progress = `${(step / TOTAL_STEPS) * 100}%`;
 
