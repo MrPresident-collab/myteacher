@@ -2,6 +2,16 @@ import type { LanguageCode } from "@/lib/languages";
 
 export type UserRole = "student" | "teacher" | "admin";
 
+export type StaffRole =
+  | "president"
+  | "admin"
+  | "support_staff"
+  | "finance"
+  | "operations"
+  | "content_manager"
+  | "user_access_manager"
+  | "data_analyst";
+
 export type LanguageLevel =
   | "beginner"
   | "intermediate"
@@ -53,6 +63,7 @@ export type Profile = {
   avatar_url?: string | null;
   phone?: string | null;
   role: UserRole;
+  staff_role?: StaffRole | null;
   country_code?: string;
   province?: string | null;
   city?: string | null;
@@ -106,6 +117,7 @@ export type TeacherProfile = {
   total_lessons_completed: number;
   profile_completion_percentage: number;
   active: boolean;
+  public_profile_video_path?: string | null;
   created_at?: string;
   updated_at?: string;
   profile?: Profile;
@@ -151,6 +163,22 @@ export type TeacherDocument = {
   status: "pending" | "approved" | "rejected";
   admin_notes?: string | null;
   created_at?: string;
+};
+
+export type TeacherLanguageVerificationVideo = {
+  id?: string;
+  teacher_id: string;
+  language_code: LanguageCode;
+  storage_path: string;
+  status: "pending" | "approved" | "rejected";
+  reviewer_id?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  file_name: string;
+  file_size: number;
+  duration_seconds?: number | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type TeacherAvailability = {
@@ -410,4 +438,6 @@ export type TeacherApplicationData = {
   certificateFileName?: string;
   idDocumentFileName?: string;
   verificationStatus: TeacherVerificationStatus;
+  languageVerificationVideos?: Partial<Record<LanguageCode, TeacherLanguageVerificationVideo>>;
+  publicProfileVideoPath?: string;
 };

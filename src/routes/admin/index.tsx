@@ -26,8 +26,11 @@ import {
   matchLearningRequest,
   reviewTeacherApplication,
   updateTeacherVerification,
+  getTeacherLanguageVerificationVideos,
+  createTeacherLanguageVideoReviewUrl,
+  reviewTeacherLanguageVerificationVideo,
 } from "@/lib/api";
-import type { TeacherProfile, Group, LearningRequest, TeacherVerificationStatus, AdminAuditLog, TeacherDocument } from "@/types";
+import type { TeacherProfile, Group, LearningRequest, TeacherVerificationStatus, AdminAuditLog, TeacherDocument, TeacherLanguageVerificationVideo } from "@/types";
 
 export function AdminDashboardPage() {
   return (
@@ -58,6 +61,8 @@ function AdminDashboardContent() {
   const [learningRequests, setLearningRequests] = useState<LearningRequest[]>([]);
   const [auditLogs, setAuditLogs] = useState<Array<AdminAuditLog & { admin?: { full_name?: string } }>>([]);
   const [documentsForReview, setDocumentsForReview] = useState<TeacherDocument[]>([]);
+  const [videosForReview, setVideosForReview] = useState<TeacherLanguageVerificationVideo[]>([]);
+  const [videoUrls, setVideoUrls] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Application Review Modal / Drawer State
@@ -96,10 +101,24 @@ function AdminDashboardContent() {
     try {
       const docs = await getTeacherDocuments(teacherId);
       setDocumentsForReview(docs);
+      setVideosForReview(await getTeacherLanguageVerificationVideos(teacherId));
+      setVideoUrls({});
     } catch (error) {
       console.error(error);
       setFeedback("Não foi possível carregar os documentos de verificação.");
     }
+  }
+
+  async function handleReviewVideo(video: TeacherLanguageVerificationVideo, status: "approved" | "rejected") {
+    if (!user) return;
+    const rejectionReason = status === "rejected" ? window.prompt("Reason for rejection") || "" : undefined;
+    const result = await reviewTeacherLanguageVerificationVideo({ videoId: video.id || "", reviewerId: user.id, status, rejectionReason });
+    if (!result.success) {
+      setFeedback(result.error || "The video review failed.");
+      return;
+    }
+    setVideosForReview((current) => current.map((item) => item.id === video.id ? { ...item, status, rejection_reason: rejectionReason || null } : item));
+    setFeedback(`Language verification video ${status}.`);
   }
 
   async function handleReviewDecision(teacherId: string, status: TeacherVerificationStatus, notes?: string) {
@@ -770,6 +789,27 @@ function AdminDashboardContent() {
                             Ver
                           </a>
                         )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {videosForReview.length > 0 && (
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--background)] p-3">
+                  <p className="font-bold text-xs uppercase text-[var(--muted)]">Private Language Verification Videos</p>
+                  <div className="mt-2 space-y-3">
+                    {videosForReview.map((video) => (
+                      <div key={video.id} className="rounded-xl border border-[var(--border)] bg-white p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold">{video.language_code}</span>
+                          <span className="text-[11px] font-bold text-[var(--muted)]">{video.status}</span>
+                        </div>
+                        {videoUrls[video.id || ""] ? <video className="mt-2 w-full rounded-lg" controls src={videoUrls[video.id || ""]} /> : <button type="button" className="mt-2 text-[11px] font-bold text-[var(--primary)] underline" onClick={() => void createTeacherLanguageVideoReviewUrl(video.storage_path).then((url) => setVideoUrls((current) => ({ ...current, [video.id || ""]: url })))}>Load secure preview</button>}
+                        <div className="mt-2 flex gap-2">
+                          <button type="button" className="rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-bold text-white" onClick={() => void handleReviewVideo(video, "approved")}>Approve</button>
+                          <button type="button" className="rounded-full bg-red-50 px-3 py-1 text-[11px] font-bold text-red-700" onClick={() => void handleReviewVideo(video, "rejected")}>Reject</button>
+                        </div>
                       </div>
                     ))}
                   </div>

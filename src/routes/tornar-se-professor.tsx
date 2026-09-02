@@ -13,9 +13,9 @@ import { Flag } from "@/components/common/Flag";
 import { LANGUAGES, REGIONAL_MARKETS, type LanguageCode } from "@/lib/languages";
 import type { TeacherApplicationData } from "@/types";
 import { useAuth } from "@/context/AuthContext";
-import { submitTeacherApplication } from "@/lib/api";
+import { submitTeacherApplication, uploadTeacherLanguageVerificationVideo, uploadTeacherProfileVideo } from "@/lib/api";
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 
 export function TeacherRegistrationPage() {
   const navigate = useNavigate();
@@ -57,6 +57,7 @@ export function TeacherRegistrationPage() {
     cvFileName: "",
     certificateFileName: "",
     verificationStatus: "submitted",
+    languageVerificationVideos: {},
   });
 
   const progress = `${(step / TOTAL_STEPS) * 100}%`;
@@ -82,8 +83,9 @@ export function TeacherRegistrationPage() {
     if (step === 1) return form.firstName.trim().length > 0 && form.email.trim().length > 0;
     if (step === 2) return form.languages.length > 0;
     if (step === 3) return form.teachingExperience.length > 0;
-    if (step === 4) return form.modalities.length > 0;
-    if (step === 5) return form.availability.length > 0;
+    if (step === 4) return form.languages.every((language) => Boolean(form.languageVerificationVideos?.[language]?.id));
+    if (step === 5) return form.modalities.length > 0;
+    if (step === 6) return form.availability.length > 0;
     return true;
   }, [step, form]);
 
@@ -120,6 +122,41 @@ export function TeacherRegistrationPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleVideoChange(languageCode: LanguageCode, file: File) {
+    if (!user) {
+      setError("Create an account or sign in before uploading videos.");
+      return;
+    }
+
+    const videoElement = document.createElement("video");
+    videoElement.preload = "metadata";
+    videoElement.onloadedmetadata = async () => {
+      URL.revokeObjectURL(videoElement.src);
+      const result = await uploadTeacherLanguageVerificationVideo({
+        teacherId: user.id,
+        languageCode,
+        file,
+        durationSeconds: videoElement.duration,
+      });
+      if (!result.success || !result.video) {
+        setError(result.error || "The video could not be uploaded.");
+        return;
+      }
+      setError(null);
+      update({ languageVerificationVideos: { ...form.languageVerificationVideos, [languageCode]: result.video } });
+    };
+    videoElement.onerror = () => setError("The video duration could not be read.");
+    videoElement.src = URL.createObjectURL(file);
+  }
+
+  async function handleProfileVideoChange(file: File) {
+    if (!user) return setError("Create an account or sign in before uploading videos.");
+    const result = await uploadTeacherProfileVideo({ teacherId: user.id, file });
+    if (!result.success) return setError(result.error || "The profile video could not be uploaded.");
+    setError(null);
+    update({ publicProfileVideoPath: result.path });
   }
 
   function back() {
@@ -458,21 +495,61 @@ export function TeacherRegistrationPage() {
             </div>
           )}
 
-          {/* STEP 4: MODALITY, LESSON TYPES & PRICING */}
+          {/* STEP 4: PRIVATE LANGUAGE VERIFICATION VIDEOS */}
           {step === 4 && (
             <div className="space-y-6">
               <div className="text-center max-w-xl mx-auto">
                 <span className="text-xs font-bold uppercase tracking-wider text-[var(--primary)]">
-                  Preferências & Preços
+                  Verificação de Idiomas
                 </span>
                 <h2 className="mt-2 font-display text-3xl font-extrabold text-[var(--foreground)] sm:text-4xl">
-                  Modalidade & Valores de Aula
+                  Vídeos de Introdução por Língua
                 </h2>
                 <p className="mt-2 text-sm text-[var(--muted)]">
-                  Defina onde ensina e o seu preço por hora em Kwanzas (AOA).
+                  Envie um vídeo privado de até 35 segundos para cada língua que pretende ensinar.
                 </p>
               </div>
 
+              <div className="grid gap-4">
+                {form.languages.map((languageCode) => {
+                  const language = LANGUAGES.find((item) => item.code === languageCode);
+                  const video = form.languageVerificationVideos?.[languageCode];
+                  return (
+                    <div key={languageCode} className="rounded-[2rem] border border-[var(--border)] bg-white p-6 shadow-xs">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="font-display text-lg font-bold">{language?.name || languageCode}</p>
+                          <p className="text-xs text-[var(--muted)]">Private video for MyTeacher review</p>
+                        </div>
+                        <span className={`text-xs font-bold ${video ? "text-emerald-700" : "text-amber-700"}`}>
+                          {video ? "Uploaded" : "Required"}
+                        </span>
+                      </div>
+                      <input
+                        className="mt-4 block w-full text-sm"
+                        type="file"
+                        accept="video/mp4,video/webm,video/quicktime"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void handleVideoChange(languageCode, file);
+                        }}
+                      />
+                      {video && <p className="mt-2 text-xs text-[var(--muted)]">{video.file_name} · {video.duration_seconds}s · Select another file to replace it</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* STEP 5: MODALITY, LESSON TYPES & PRICING */}
+          {step === 5 && (
+            <div className="space-y-6">
+              <div className="text-center max-w-xl mx-auto">
+                <span className="text-xs font-bold uppercase tracking-wider text-[var(--primary)]">Preferências & Preços</span>
+                <h2 className="mt-2 font-display text-3xl font-extrabold text-[var(--foreground)] sm:text-4xl">Modalidade & Valores de Aula</h2>
+                <p className="mt-2 text-sm text-[var(--muted)]">Defina onde ensina e o seu preço por hora em Kwanzas (AOA).</p>
+              </div>
               <div className="rounded-[2rem] border border-[var(--border)] bg-white p-6 sm:p-8 space-y-6 shadow-xs">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-[var(--muted)] mb-2">
@@ -546,8 +623,8 @@ export function TeacherRegistrationPage() {
             </div>
           )}
 
-          {/* STEP 5: AVAILABILITY */}
-          {step === 5 && (
+          {/* STEP 6: AVAILABILITY */}
+          {step === 6 && (
             <div className="space-y-6">
               <div className="text-center max-w-xl mx-auto">
                 <span className="text-xs font-bold uppercase tracking-wider text-[var(--primary)]">
@@ -596,8 +673,8 @@ export function TeacherRegistrationPage() {
             </div>
           )}
 
-          {/* STEP 6: VERIFICATION & MOTIVATION */}
-          {step === 6 && (
+          {/* STEP 7: VERIFICATION & MOTIVATION */}
+          {step === 7 && (
             <div className="space-y-6">
               <div className="text-center max-w-xl mx-auto">
                 <span className="text-xs font-bold uppercase tracking-wider text-[var(--primary)]">
@@ -612,6 +689,12 @@ export function TeacherRegistrationPage() {
               </div>
 
               <div className="rounded-[2rem] border border-[var(--border)] bg-white p-6 sm:p-8 space-y-5 shadow-xs">
+                <div className="rounded-2xl border border-[var(--border)] p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Optional public profile video</p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">This separate video may be shown to learners after approval. It does not replace language verification videos.</p>
+                  <input className="mt-3 block w-full text-sm" type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleProfileVideoChange(file); }} />
+                  {form.publicProfileVideoPath && <p className="mt-2 text-xs text-emerald-700">Public profile video uploaded.</p>}
+                </div>
                 <div className="rounded-2xl bg-amber-50 p-4 border border-amber-200 text-xs text-amber-900 leading-relaxed">
                   <strong className="block font-bold mb-1">Princípio de Confiança MyTeacher:</strong>
                   Os documentos de identificação e certificados submetidos permanecem 100% confidenciais e nunca são exibidos publicamente no seu perfil. O selo <strong>Verificado</strong> será ativado após conferência administrativa.

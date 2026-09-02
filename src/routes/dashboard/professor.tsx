@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Calendar,
@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Flag } from "@/components/common/Flag";
+import { getTeacher } from "@/lib/api";
 
 export function TeacherDashboardPage() {
   return (
@@ -31,9 +32,18 @@ type TabType = "overview" | "profile" | "students" | "groups" | "availability" |
 function TeacherDashboardContent() {
   const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const [verificationStatus, setVerificationStatus] = useState<string>("submitted");
 
-  // Simulated verification status (defaults to "verified" or "under_review")
-  const verificationStatus = "verified"; // or "under_review"
+  useEffect(() => {
+    if (!profile?.id) return;
+    getTeacher(profile.id)
+      .then((teacher) => {
+        if (!teacher) return;
+        setVerificationStatus(teacher.verification_status);
+      })
+      .catch((error) => console.error("Unable to load teacher verification status:", error));
+  }, [profile?.id]);
+
   const isVerified = verificationStatus === "verified";
 
   const teacherName = profile?.full_name?.split(" ")[0] || "Professor";

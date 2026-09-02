@@ -15,6 +15,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
+  CREATE TYPE staff_role AS ENUM ('president', 'admin', 'support_staff', 'finance', 'operations', 'content_manager', 'user_access_manager', 'data_analyst');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
   CREATE TYPE language_level AS ENUM ('beginner', 'intermediate', 'advanced', 'fluent', 'unknown');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
@@ -73,6 +77,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   avatar_url TEXT,
   phone TEXT,
   role user_role NOT NULL DEFAULT 'student',
+  staff_role staff_role,
   country_code TEXT NOT NULL DEFAULT 'ao' REFERENCES public.regional_markets(code) ON DELETE RESTRICT,
   province TEXT,
   city TEXT,
@@ -131,6 +136,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_profiles (
   total_lessons_completed INT NOT NULL DEFAULT 0,
   profile_completion_percentage INT NOT NULL DEFAULT 60,
   active BOOLEAN NOT NULL DEFAULT true,
+  public_profile_video_path TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
@@ -168,6 +174,23 @@ CREATE TABLE IF NOT EXISTS public.teacher_documents (
   status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
   admin_notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.teacher_language_verification_videos (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  teacher_id UUID NOT NULL REFERENCES public.teacher_profiles(id) ON DELETE CASCADE,
+  language_code TEXT NOT NULL REFERENCES public.languages(code) ON DELETE RESTRICT,
+  storage_path TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_size INT NOT NULL CHECK (file_size > 0 AND file_size <= 52428800),
+  duration_seconds NUMERIC(5, 2) NOT NULL CHECK (duration_seconds > 0 AND duration_seconds <= 35),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  reviewer_id UUID REFERENCES public.profiles(id),
+  reviewed_at TIMESTAMPTZ,
+  rejection_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  UNIQUE(teacher_id, language_code)
 );
 
 CREATE TABLE IF NOT EXISTS public.teacher_availabilities (
@@ -323,6 +346,8 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
   ON public.notifications (user_id, read, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_teacher_documents_teacher_status
   ON public.teacher_documents (teacher_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_teacher_language_videos_teacher_status
+  ON public.teacher_language_verification_videos (teacher_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_actor_created_at
   ON public.admin_audit_logs (admin_id, created_at DESC);
 
@@ -414,6 +439,75 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+CREATE OR REPLACE FUNCTION public.prevent_protected_profile_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF (NEW.role IS DISTINCT FROM OLD.role OR NEW.staff_role IS DISTINCT FROM OLD.staff_role)
+    AND NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND staff_role = 'president') THEN
+    RAISE EXCEPTION 'Only the President can change privileged roles.';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS protect_profile_roles ON public.profiles;
+CREATE TRIGGER protect_profile_roles
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_protected_profile_changes();
+
+CREATE OR REPLACE FUNCTION public.prevent_teacher_video_self_review()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF (NEW.status IS DISTINCT FROM OLD.status OR NEW.reviewer_id IS DISTINCT FROM OLD.reviewer_id OR NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at)
+    AND NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND (staff_role IN ('president', 'admin') OR role = 'admin')) THEN
+    RAISE EXCEPTION 'Only authorized staff can review verification videos.';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS protect_teacher_video_review ON public.teacher_language_verification_videos;
+CREATE TRIGGER protect_teacher_video_review
+  BEFORE UPDATE ON public.teacher_language_verification_videos
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_teacher_video_self_review();
+
+CREATE OR REPLACE FUNCTION public.require_approved_language_videos()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.verification_status IN ('approved', 'verified') AND EXISTS (
+    SELECT 1
+    FROM public.teacher_languages language
+    WHERE language.teacher_id = NEW.id
+      AND NOT EXISTS (
+        SELECT 1 FROM public.teacher_language_verification_videos video
+        WHERE video.teacher_id = NEW.id
+          AND video.language_code = language.language_code
+          AND video.status = 'approved'
+      )
+  ) THEN
+    RAISE EXCEPTION 'Every teaching language requires an approved verification video.';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS require_approved_language_videos ON public.teacher_profiles;
+CREATE TRIGGER require_approved_language_videos
+  BEFORE UPDATE ON public.teacher_profiles
+  FOR EACH ROW EXECUTE FUNCTION public.require_approved_language_videos();
+
+CREATE OR REPLACE FUNCTION public.prevent_audit_log_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'Audit logs are append-only.';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS protect_audit_log_mutation ON public.admin_audit_logs;
+CREATE TRIGGER protect_audit_log_mutation
+  BEFORE UPDATE OR DELETE ON public.admin_audit_logs
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_audit_log_mutation();
+
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
@@ -467,6 +561,7 @@ ALTER TABLE public.teacher_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teacher_languages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teacher_qualifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teacher_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.teacher_language_verification_videos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teacher_availabilities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_memberships ENABLE ROW LEVEL SECURITY;
@@ -508,6 +603,7 @@ CREATE POLICY "Teachers can manage own profile" ON public.teacher_profiles FOR A
 CREATE POLICY "Teachers can manage own languages" ON public.teacher_languages FOR ALL USING (auth.uid() = teacher_id);
 CREATE POLICY "Teachers can manage own qualifications" ON public.teacher_qualifications FOR ALL USING (auth.uid() = teacher_id);
 CREATE POLICY "Teachers can manage own documents" ON public.teacher_documents FOR ALL USING (auth.uid() = teacher_id);
+CREATE POLICY "Teachers can manage own language verification videos" ON public.teacher_language_verification_videos FOR ALL USING (auth.uid() = teacher_id) WITH CHECK (auth.uid() = teacher_id);
 CREATE POLICY "Teachers can manage own availability" ON public.teacher_availabilities FOR ALL USING (auth.uid() = teacher_id);
 CREATE POLICY "Teachers can view own earnings" ON public.earnings_records FOR SELECT USING (auth.uid() = teacher_id);
 
@@ -524,6 +620,9 @@ CREATE POLICY "Admins have full access on teacher_profiles" ON public.teacher_pr
 CREATE POLICY "Admins have full access on teacher_documents" ON public.teacher_documents FOR ALL USING (
   EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
 );
+CREATE POLICY "Admins can review language verification videos" ON public.teacher_language_verification_videos FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND (staff_role IN ('president', 'admin') OR role = 'admin'))
+);
 CREATE POLICY "Admins have full access on groups" ON public.groups FOR ALL USING (
   EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
 );
@@ -536,6 +635,14 @@ CREATE POLICY "Admins have full access on corporate_leads" ON public.corporate_l
 
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('teacher-documents', 'teacher-documents', false)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('teacher-language-verification-videos', 'teacher-language-verification-videos', false)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('teacher-profile-videos', 'teacher-profile-videos', true)
 ON CONFLICT (id) DO NOTHING;
 
 CREATE POLICY "Teachers can manage their own verification documents"
@@ -565,6 +672,27 @@ WITH CHECK (
     WHERE p.id = auth.uid() AND p.role = 'admin'
   )
 );
+
+CREATE POLICY "Teachers can manage own language verification videos storage"
+ON storage.objects FOR ALL
+USING (bucket_id = 'teacher-language-verification-videos' AND split_part(name, '/', 1) = auth.uid()::text)
+WITH CHECK (bucket_id = 'teacher-language-verification-videos' AND split_part(name, '/', 1) = auth.uid()::text);
+
+CREATE POLICY "Admins can review language verification videos storage"
+ON storage.objects FOR ALL
+USING (
+  bucket_id = 'teacher-language-verification-videos'
+  AND EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND (staff_role IN ('president', 'admin') OR role = 'admin'))
+)
+WITH CHECK (
+  bucket_id = 'teacher-language-verification-videos'
+  AND EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND (staff_role IN ('president', 'admin') OR role = 'admin'))
+);
+
+CREATE POLICY "Teachers can manage own public profile video storage"
+ON storage.objects FOR ALL
+USING (bucket_id = 'teacher-profile-videos' AND split_part(name, '/', 1) = auth.uid()::text)
+WITH CHECK (bucket_id = 'teacher-profile-videos' AND split_part(name, '/', 1) = auth.uid()::text);
 
 -- ------------------------------------------------------------
 -- 11. INITIAL SEED DATA

@@ -9,6 +9,7 @@ import type {
   Profile,
   QuizQuestion,
   TeacherDocument,
+  TeacherLanguageVerificationVideo,
   QuizResult,
   TeacherApplicationData,
   TeacherProfile,
@@ -331,6 +332,18 @@ export async function getLearnerLanguages(learnerId: string): Promise<LearnerLan
 // ============================================================
 
 export async function submitTeacherApplication(userId: string, form: TeacherApplicationData): Promise<{ success: boolean; error?: string }> {
+  const { data: submittedVideos, error: videosError } = await supabase
+    .from("teacher_language_verification_videos")
+    .select("language_code")
+    .eq("teacher_id", userId);
+
+  if (videosError) return { success: false, error: videosError.message };
+  const submittedLanguages = new Set((submittedVideos || []).map((video) => video.language_code));
+  const missingLanguages = form.languages.filter((language) => !submittedLanguages.has(language));
+  if (missingLanguages.length > 0) {
+    return { success: false, error: "Upload one verification video for every teaching language before submitting." };
+  }
+
   const { error: profileError } = await supabase.from("profiles").update({
     full_name: `${form.firstName} ${form.lastName}`.trim(),
     phone: form.phone,
@@ -358,6 +371,7 @@ export async function submitTeacherApplication(userId: string, form: TeacherAppl
     city: form.city,
     verification_status: "submitted",
     profile_completion_percentage: 85,
+    public_profile_video_path: form.publicProfileVideoPath || null,
   });
 
   if (teacherError) {
@@ -663,6 +677,121 @@ export async function uploadTeacherDocument(input: {
   }
 
   return { success: true, url: signedUrlData.signedUrl };
+}
+
+export async function uploadTeacherLanguageVerificationVideo(input: {
+  teacherId: string;
+  languageCode: LanguageCode;
+  file: File;
+  durationSeconds: number;
+}): Promise<{ success: boolean; video?: TeacherLanguageVerificationVideo; error?: string }> {
+  const allowedTypes = ["video/mp4", "video/webm", "video/quicktime"];
+  if (!allowedTypes.includes(input.file.type)) {
+    return { success: false, error: "Use um vídeo MP4, WebM ou MOV." };
+  }
+  if (input.file.size <= 0 || input.file.size > 50 * 1024 * 1024) {
+    return { success: false, error: "O vídeo deve ter no máximo 50 MB." };
+  }
+  if (!Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0 || input.durationSeconds > 35) {
+    return { success: false, error: "O vídeo deve ter no máximo 35 segundos." };
+  }
+
+  const sanitizedFileName = input.file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `${input.teacherId}/${input.languageCode}/${Date.now()}-${sanitizedFileName}`;
+  const storage = supabase.storage.from("teacher-language-verification-videos");
+  const { error: uploadError } = await storage.upload(storagePath, input.file, {
+    cacheControl: "3600",
+    upsert: true,
+    contentType: input.file.type,
+  });
+
+  if (uploadError) return { success: false, error: uploadError.message };
+
+  const { data, error } = await supabase
+    .from("teacher_language_verification_videos")
+    .upsert({
+      teacher_id: input.teacherId,
+      language_code: input.languageCode,
+      storage_path: storagePath,
+      file_name: input.file.name,
+      file_size: input.file.size,
+      duration_seconds: input.durationSeconds,
+      status: "pending",
+      reviewer_id: null,
+      reviewed_at: null,
+      rejection_reason: null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "teacher_id,language_code" })
+    .select()
+    .single();
+
+  if (error) {
+    await storage.remove([storagePath]);
+    return { success: false, error: error.message };
+  }
+  return { success: true, video: data as TeacherLanguageVerificationVideo };
+}
+
+export async function uploadTeacherProfileVideo(input: { teacherId: string; file: File }): Promise<{ success: boolean; path?: string; error?: string }> {
+  if (!["video/mp4", "video/webm", "video/quicktime"].includes(input.file.type)) return { success: false, error: "Use an MP4, WebM, or MOV video." };
+  if (input.file.size <= 0 || input.file.size > 100 * 1024 * 1024) return { success: false, error: "The profile video must be 100 MB or smaller." };
+  const fileName = input.file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${input.teacherId}/${Date.now()}-${fileName}`;
+  const { error } = await supabase.storage.from("teacher-profile-videos").upload(path, input.file, { upsert: true, contentType: input.file.type });
+  return error ? { success: false, error: error.message } : { success: true, path };
+}
+
+export async function getTeacherLanguageVerificationVideos(teacherId: string): Promise<TeacherLanguageVerificationVideo[]> {
+  const { data, error } = await supabase
+    .from("teacher_language_verification_videos")
+    .select("*")
+    .eq("teacher_id", teacherId)
+    .order("language_code");
+  if (error) throw new Error(error.message);
+  return (data || []) as TeacherLanguageVerificationVideo[];
+}
+
+export async function createTeacherLanguageVideoReviewUrl(storagePath: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from("teacher-language-verification-videos")
+    .createSignedUrl(storagePath, 900);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
+}
+
+export async function reviewTeacherLanguageVerificationVideo(input: {
+  videoId: string;
+  reviewerId: string;
+  status: "approved" | "rejected";
+  rejectionReason?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  if (input.status === "rejected" && !input.rejectionReason?.trim()) {
+    return { success: false, error: "É obrigatório indicar o motivo da rejeição." };
+  }
+  const { data: video, error: videoError } = await supabase
+    .from("teacher_language_verification_videos")
+    .update({
+      status: input.status,
+      reviewer_id: input.reviewerId,
+      reviewed_at: new Date().toISOString(),
+      rejection_reason: input.status === "rejected" ? input.rejectionReason : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.videoId)
+    .select("teacher_id, language_code")
+    .single();
+  if (videoError) return { success: false, error: videoError.message };
+
+  if (input.status === "rejected") {
+    await createNotification({
+      userId: video.teacher_id,
+      title: "Vídeo de verificação necessita de atenção",
+      message: `O vídeo de verificação de ${video.language_code} foi rejeitado: ${input.rejectionReason}`,
+      type: "action_required",
+      actionUrl: "/dashboard/professor",
+    });
+  }
+  return { success: true };
 }
 
 export async function createNotification(input: {

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { getTeacher } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import type { TeacherProfile } from "@/types";
 import { Flag } from "@/components/common/Flag";
 
@@ -82,6 +83,9 @@ export function TeacherProfilePage() {
   const profile = teacher.profile;
   const teacherName = profile?.full_name ?? "Professor MyTeacher";
   const isVerified = teacher.verification_status === "verified";
+  const publicProfileVideoUrl = teacher.public_profile_video_path
+    ? supabase.storage.from("teacher-profile-videos").getPublicUrl(teacher.public_profile_video_path).data.publicUrl
+    : null;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 md:py-12">
@@ -202,6 +206,13 @@ export function TeacherProfilePage() {
               {teacher.bio || "Este professor ainda não adicionou uma biografia detalhada."}
             </p>
           </div>
+
+          {publicProfileVideoUrl && isVerified && (
+            <div className="rounded-3xl border border-[var(--border)] bg-white p-7 sm:p-8">
+              <h2 className="font-display text-2xl font-extrabold">Introduction Video</h2>
+              <video className="mt-4 w-full rounded-2xl" controls src={publicProfileVideoUrl} />
+            </div>
+          )}
 
           <div className="rounded-3xl border border-[var(--border)] bg-white p-7 sm:p-8">
             <h2 className="font-display text-2xl font-extrabold flex items-center gap-2.5">
