@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">MyTeacher</title>
+  <desc id="description">MyTeacher wordmark with graduation cap</desc>
+  <rect width="1200" height="630" fill="#faf7f0"/>
+  <rect x="90" y="90" width="450" height="450" rx="112" fill="#d9472f"/>
+  <g transform="translate(193 193) scale(7.25)" fill="none">
+    <path d="M2 8.5 12 4l10 4.5-10 4.5L2 8.5Z" fill="#fff"/>
+    <path d="M6.5 10.7v4.1c0 1.6 2.5 2.9 5.5 2.9s5.5-1.3 5.5-2.9v-4.1" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M20.5 9.3V14" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>
+  </g>
+  <text x="610" y="350" fill="#173f3b" font-family="Bricolage Grotesque, Plus Jakarta Sans, sans-serif" font-size="92" font-weight="800" letter-spacing="0">My<tspan fill="#d9472f">Teacher</tspan></text>
+  <text x="615" y="420" fill="#756f65" font-family="Plus Jakarta Sans, sans-serif" font-size="28">Learn languages without borders</text>
+</svg>
