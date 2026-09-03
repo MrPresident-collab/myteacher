@@ -7,8 +7,10 @@ import {
   ShieldCheck,
   Users,
   Video,
-  Sparkles,
 } from "lucide-react";
+import howImage from "@/assets/how.jpg";
+import voceImage from "@/assets/voce.jpg";
+import becomeTeacherImage from "@/assets/become-teacher.jpg";
 
 export function HowItWorksPage() {
   return (
@@ -17,7 +19,7 @@ export function HowItWorksPage() {
       <section className="relative px-5 pb-16 pt-12 md:pb-24 md:pt-16">
         <div className="mx-auto max-w-4xl text-center">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/80 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[var(--primary)] shadow-sm">
-            <Sparkles className="size-3.5" />
+            <ShieldCheck className="size-3.5" />
             Transparência & Qualidade
           </div>
 
@@ -44,6 +46,10 @@ export function HowItWorksPage() {
             <h2 className="mt-2 font-display text-3xl font-extrabold md:text-4xl">
               O seu percurso de aprendizagem em 4 passos simples
             </h2>
+          </div>
+
+          <div className="mt-10 overflow-hidden rounded-[2rem] border border-[var(--border)] bg-white p-2 shadow-lg">
+            <img src={howImage} alt="Learners and teachers using MyTeacher" className="aspect-[16/6] w-full rounded-[1.5rem] object-cover" loading="lazy" />
           </div>
 
           <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
@@ -118,6 +124,7 @@ export function HowItWorksPage() {
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8">
+              <img src={voceImage} alt="Small MyTeacher learning group" className="mb-6 aspect-[4/3] w-full rounded-2xl object-cover" loading="lazy" />
               <h3 className="font-display text-xl font-bold text-[var(--gold)]">
                 Como Funciona a Vaga no Grupo?
               </h3>
@@ -148,7 +155,7 @@ export function HowItWorksPage() {
               </h2>
               <p className="mt-4 leading-7 text-[var(--muted)]">
                 Os professores no MyTeacher têm acesso a ferramentas profissionais para gerir
-                alunos, turmas, horários e pagamentos em Kwanzas (AOA).
+                alunos, turmas, horários e pagamentos .
               </p>
 
               <div className="mt-8 space-y-4">
@@ -182,13 +189,15 @@ export function HowItWorksPage() {
                   to="/tornar-se-professor"
                   className="inline-flex items-center gap-2 rounded-full bg-[var(--primary)] px-7 py-3.5 font-bold text-white shadow-md transition hover:bg-[var(--primary-dark)]"
                 >
-                  Candidatar-se como Professor
+                  Tornar-se Professor
                   <ArrowRight className="size-4" />
                 </Link>
               </div>
             </div>
 
-            <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+            <div className="overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--card)] p-2 shadow-sm">
+              <img src={becomeTeacherImage} alt="Independent teacher using the MyTeacher platform" className="aspect-[4/3] w-full rounded-2xl object-cover" loading="lazy" />
+              <div className="p-6 sm:p-8">
               <h3 className="font-display text-xl font-bold">Critérios de Qualidade MyTeacher</h3>
               <p className="mt-2 text-sm text-[var(--muted)]">
                 Preservamos a confiança na plataforma através de padrões rigorosos:
@@ -206,6 +215,7 @@ export function HowItWorksPage() {
                 <div className="rounded-xl border border-[var(--border)] bg-white p-4">
                   <strong>4. Avaliação Contínua:</strong> Monitorização do feedback e assiduidade nas aulas.
                 </div>
+              </div>
               </div>
             </div>
           </div>

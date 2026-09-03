@@ -273,4 +273,97 @@ BEGIN
   END IF;
 END $$;
 
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'lesson_session_status') THEN
+    CREATE TYPE lesson_session_status AS ENUM ('scheduled', 'live', 'completed', 'cancelled', 'expired');
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.lesson_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), booking_id UUID NOT NULL UNIQUE REFERENCES public.lesson_bookings(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL, room_name TEXT NOT NULL UNIQUE, status lesson_session_status NOT NULL DEFAULT 'scheduled',
+  scheduled_start TIMESTAMPTZ NOT NULL, lesson_duration_seconds INT NOT NULL DEFAULT 3600 CHECK (lesson_duration_seconds BETWEEN 1 AND 3600),
+  wrap_up_duration_seconds INT NOT NULL DEFAULT 900 CHECK (wrap_up_duration_seconds BETWEEN 0 AND 900), started_at TIMESTAMPTZ, ended_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()), updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.lesson_sessions ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_lesson_sessions_start ON public.lesson_sessions (scheduled_start, status);
+
+ALTER TABLE public.reviews ADD COLUMN IF NOT EXISTS booking_id UUID REFERENCES public.lesson_bookings(id) ON DELETE CASCADE;
+ALTER TABLE public.reviews ADD COLUMN IF NOT EXISTS reviewer_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE;
+ALTER TABLE public.reviews ADD COLUMN IF NOT EXISTS reviewee_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.reviews'::regclass AND conname = 'reviews_no_self_rating') THEN
+    ALTER TABLE public.reviews ADD CONSTRAINT reviews_no_self_rating CHECK (reviewer_id IS NULL OR reviewee_id IS NULL OR reviewer_id <> reviewee_id);
+  END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_booking_reviewer ON public.reviews (booking_id, reviewer_id) WHERE booking_id IS NOT NULL AND reviewer_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.payment_transactions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), booking_id UUID REFERENCES public.lesson_bookings(id) ON DELETE SET NULL,
+  learner_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT, provider TEXT NOT NULL, provider_payment_id TEXT,
+  idempotency_key TEXT NOT NULL UNIQUE, amount NUMERIC(12,2) NOT NULL CHECK (amount > 0), currency_code TEXT NOT NULL DEFAULT 'AOA',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','failed','expired','refunded')), provider_reference TEXT,
+  confirmed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()), updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+CREATE TABLE IF NOT EXISTS public.payment_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), transaction_id UUID NOT NULL REFERENCES public.payment_transactions(id) ON DELETE CASCADE,
+  provider_event_id TEXT NOT NULL UNIQUE, event_type TEXT NOT NULL, payload JSONB NOT NULL, received_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+CREATE TABLE IF NOT EXISTS public.tips (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), booking_id UUID NOT NULL REFERENCES public.lesson_bookings(id) ON DELETE RESTRICT,
+  learner_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT, teacher_id UUID NOT NULL REFERENCES public.teacher_profiles(id) ON DELETE RESTRICT,
+  payment_transaction_id UUID REFERENCES public.payment_transactions(id) ON DELETE SET NULL, amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  platform_fee NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (platform_fee >= 0), teacher_net_amount NUMERIC(12,2) NOT NULL CHECK (teacher_net_amount >= 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','failed','refunded')), created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+CREATE TABLE IF NOT EXISTS public.payouts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), teacher_id UUID NOT NULL REFERENCES public.teacher_profiles(id) ON DELETE RESTRICT,
+  amount NUMERIC(12,2) NOT NULL CHECK (amount > 0), currency_code TEXT NOT NULL DEFAULT 'AOA', status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','paid','failed')),
+  provider_reference TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()), paid_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS public.platform_settings (
+  key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_by UUID REFERENCES public.profiles(id), updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+INSERT INTO public.platform_settings (key, value) VALUES ('platform_fee_percent', '17.5'::jsonb) ON CONFLICT (key) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.create_lesson_booking(
+  requested_teacher_id UUID, requested_language_code TEXT, requested_start TIMESTAMPTZ,
+  requested_duration_minutes INT, requested_modality TEXT, requested_price NUMERIC
+)
+RETURNS public.lesson_bookings AS $$
+DECLARE booking public.lesson_bookings;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Authentication is required.'; END IF;
+  IF requested_duration_minutes <= 0 OR requested_duration_minutes > 60 THEN RAISE EXCEPTION 'Lesson duration must be between 1 and 60 minutes.'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.teacher_profiles WHERE id=requested_teacher_id AND active=true AND verification_status IN ('approved','verified') AND ((requested_modality='online' AND online_enabled) OR (requested_modality='presencial' AND in_person_enabled))) THEN RAISE EXCEPTION 'Teacher is not eligible for this booking.'; END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(requested_teacher_id::text, 0));
+  IF EXISTS (SELECT 1 FROM public.lesson_bookings b WHERE b.teacher_id=requested_teacher_id AND b.status IN ('scheduled','in_progress') AND tstzrange(b.scheduled_at, b.scheduled_at + make_interval(mins => b.duration_minutes), '[)') && tstzrange(requested_start, requested_start + make_interval(mins => requested_duration_minutes), '[)')) THEN RAISE EXCEPTION 'Teacher is already booked for this time.'; END IF;
+  INSERT INTO public.lesson_bookings (teacher_id, learner_id, language_code, scheduled_at, duration_minutes, modality, status, price)
+  VALUES (requested_teacher_id, auth.uid(), requested_language_code, requested_start, requested_duration_minutes, requested_modality, 'scheduled', requested_price) RETURNING * INTO booking;
+  RETURN booking;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+ALTER TABLE public.payment_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tips ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payouts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_settings ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='lesson_sessions' AND policyname='Participants can view own lesson sessions') THEN
+    CREATE POLICY "Participants can view own lesson sessions" ON public.lesson_sessions FOR SELECT USING (EXISTS (SELECT 1 FROM public.lesson_bookings b WHERE b.id=booking_id AND (b.teacher_id=auth.uid() OR b.learner_id=auth.uid())));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='reviews' AND policyname='Completed participants can create reviews') THEN
+    CREATE POLICY "Completed participants can create reviews" ON public.reviews FOR INSERT WITH CHECK (reviewer_id=auth.uid() AND EXISTS (SELECT 1 FROM public.lesson_bookings b WHERE b.id=booking_id AND b.status='completed' AND ((b.teacher_id=auth.uid() AND reviewee_id=b.learner_id) OR (b.learner_id=auth.uid() AND reviewee_id=b.teacher_id))));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='payment_transactions' AND policyname='Users can view own payments') THEN
+    CREATE POLICY "Users can view own payments" ON public.payment_transactions FOR SELECT USING (learner_id=auth.uid() OR EXISTS (SELECT 1 FROM public.profiles p WHERE p.id=auth.uid() AND p.staff_role IN ('president','admin','finance')));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='tips' AND policyname='Participants can view own tips') THEN
+    CREATE POLICY "Participants can view own tips" ON public.tips FOR SELECT USING (learner_id=auth.uid() OR teacher_id=auth.uid());
+  END IF;
+END $$;
+
 COMMIT;

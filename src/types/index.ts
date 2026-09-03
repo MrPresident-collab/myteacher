@@ -284,6 +284,37 @@ export type LessonBooking = {
   group?: Group;
 };
 
+export type LessonSession = {
+  id: string;
+  booking_id: string;
+  provider: string;
+  room_name: string;
+  status: "scheduled" | "live" | "completed" | "cancelled" | "expired";
+  scheduled_start: string;
+  lesson_duration_seconds: number;
+  wrap_up_duration_seconds: number;
+  started_at?: string | null;
+  ended_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PaymentTransaction = {
+  id: string;
+  booking_id?: string | null;
+  learner_id: string;
+  provider: string;
+  provider_payment_id?: string | null;
+  idempotency_key: string;
+  amount: number;
+  currency_code: string;
+  status: "pending" | "confirmed" | "failed" | "expired" | "refunded";
+  provider_reference?: string | null;
+  confirmed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Review = {
   id: string;
   teacher_id: string;
@@ -292,6 +323,9 @@ export type Review = {
   comment?: string | null;
   language_code?: LanguageCode;
   created_at: string;
+  booking_id?: string | null;
+  reviewer_id?: string | null;
+  reviewee_id?: string | null;
   learner?: Profile;
 };
 
@@ -305,6 +339,19 @@ export type EarningsRecord = {
   currency_code: string;
   status: "pending" | "available" | "paid_out";
   payout_date?: string | null;
+  created_at: string;
+};
+
+export type Tip = {
+  id: string;
+  booking_id: string;
+  learner_id: string;
+  teacher_id: string;
+  payment_transaction_id?: string | null;
+  amount: number;
+  platform_fee: number;
+  teacher_net_amount: number;
+  status: "pending" | "confirmed" | "failed" | "refunded";
   created_at: string;
 };
 

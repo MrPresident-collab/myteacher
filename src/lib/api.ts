@@ -14,6 +14,9 @@ import type {
   TeacherApplicationData,
   TeacherProfile,
   TeacherVerificationStatus,
+  LessonBooking,
+  LessonSession,
+  Review,
 } from "@/types";
 import type { LanguageCode } from "@/lib/languages";
 
@@ -447,6 +450,60 @@ export async function createLearningRequest(input: Partial<LearningRequest>): Pr
   }
 
   return { success: true, data: data as LearningRequest };
+}
+
+export async function createLessonBooking(input: {
+  teacherId: string;
+  languageCode: LanguageCode;
+  scheduledAt: string;
+  durationMinutes: number;
+  modality: "online" | "presencial";
+  price: number;
+}): Promise<{ success: boolean; data?: LessonBooking; error?: string }> {
+  const { data, error } = await supabase.rpc("create_lesson_booking", {
+    requested_teacher_id: input.teacherId,
+    requested_language_code: input.languageCode,
+    requested_start: input.scheduledAt,
+    requested_duration_minutes: input.durationMinutes,
+    requested_modality: input.modality,
+    requested_price: input.price,
+  });
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: data as LessonBooking };
+}
+
+export async function getLessonSession(bookingId: string): Promise<LessonSession | null> {
+  const { data, error } = await supabase.from("lesson_sessions").select("*").eq("booking_id", bookingId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as LessonSession | null;
+}
+
+export async function submitLessonReview(input: {
+  bookingId: string;
+  revieweeId: string;
+  rating: number;
+  comment?: string;
+  languageCode?: LanguageCode;
+}): Promise<{ success: boolean; data?: Review; error?: string }> {
+  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) return { success: false, error: "Rating must be between 1 and 5." };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || user.id === input.revieweeId) return { success: false, error: "Only another lesson participant can be reviewed." };
+  const { data: booking, error: bookingError } = await supabase.from("lesson_bookings").select("teacher_id, learner_id").eq("id", input.bookingId).single();
+  if (bookingError || !booking || ![booking.teacher_id, booking.learner_id].includes(user.id) || ![booking.teacher_id, booking.learner_id].includes(input.revieweeId)) {
+    return { success: false, error: "Only lesson participants can submit this review." };
+  }
+  const { data, error } = await supabase.from("reviews").insert({
+    booking_id: input.bookingId,
+    reviewer_id: user.id,
+    reviewee_id: input.revieweeId,
+    teacher_id: booking.teacher_id,
+    learner_id: booking.learner_id,
+    rating: input.rating,
+    comment: input.comment,
+    language_code: input.languageCode,
+  }).select().single();
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: data as Review };
 }
 
 export async function createCorporateLead(lead: {

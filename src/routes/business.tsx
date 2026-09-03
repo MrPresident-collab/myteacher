@@ -12,7 +12,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
-import corporateImage from "@/assets/corporate.jpg";
+import professionalImage from "@/assets/professional.jpg";
+import businessTrainingImage from "@/assets/business-trainig.jpg";
 import { createCorporateLead } from "@/lib/api";
 
 export function BusinessPage() {
@@ -119,8 +120,8 @@ export function BusinessPage() {
           <div className="relative">
             <div className="overflow-hidden rounded-[2rem] shadow-2xl">
               <img
-                src={corporateImage}
-                alt="Formação linguística para empresas"
+                src={professionalImage}
+                alt="Formação linguística para profissionais"
                 className="aspect-[4/3] w-full object-cover"
               />
             </div>
@@ -148,7 +149,7 @@ export function BusinessPage() {
 
       {/* INTRO */}
       <section className="border-y border-[var(--border)] bg-white/60 px-5 py-20 md:py-24">
-        <div className="mx-auto max-w-7xl">
+        <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[1fr_0.85fr]">
           <div className="max-w-3xl">
             <p className="text-sm font-bold uppercase tracking-widest text-[var(--primary)]">
               Línguas para o trabalho
@@ -165,6 +166,9 @@ export function BusinessPage() {
             <p className="mt-5 max-w-2xl text-base leading-7 text-[var(--muted)]">
               Criamos experiências de aprendizagem corporativa que ajudam executivos e quadros técnicos a negociar com parceiros internacionais, elaborar relatórios formais e liderar reuniões sem barreiras linguísticas.
             </p>
+          </div>
+          <div className="overflow-hidden rounded-[2rem] border border-[var(--border)] bg-white p-2 shadow-lg">
+            <img src={businessTrainingImage} alt="Corporate language training" className="aspect-[4/3] w-full rounded-[1.5rem] object-cover" loading="lazy" />
           </div>
         </div>
       </section>
