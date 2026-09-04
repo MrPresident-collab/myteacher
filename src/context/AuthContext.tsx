@@ -3,13 +3,14 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { getCurrentProfile } from "@/lib/api";
-import type { Profile, UserRole } from "@/types";
+import type { Profile, StaffRole, UserRole } from "@/types";
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
   role: UserRole | null;
+  staffRole: StaffRole | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (input: {
@@ -19,6 +20,8 @@ interface AuthContextType {
     role: UserRole;
     phone?: string;
   }) => Promise<{ error: Error | null; user: User | null }>;
+  updateProfileData: (input: { full_name?: string; username?: string; phone?: string }) => Promise<{ error: Error | null }>;
+  changePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -103,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         options: {
           data: {
             full_name: input.fullName,
-            role: input.role,
+            role: input.role === "teacher" ? "teacher" : "student",
             phone: input.phone || null,
           },
         },
@@ -120,6 +123,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function updateProfileData(input: { full_name?: string; username?: string; phone?: string; }) {
+    try {
+      if (!user) throw new Error("No authenticated user.");
+
+      const metadata: Record<string, string | null> = {};
+      if (input.full_name !== undefined) metadata.full_name = input.full_name.trim() || null;
+      if (input.username !== undefined) metadata.username = input.username.trim() || null;
+      if (input.phone !== undefined) metadata.phone = input.phone.trim() || null;
+
+      if (Object.keys(metadata).length > 0) {
+        const { error: authError } = await supabase.auth.updateUser({ data: metadata });
+        if (authError) throw authError;
+      }
+
+      const profileUpdates: Partial<Profile> = {};
+      if (input.full_name !== undefined) profileUpdates.full_name = input.full_name.trim();
+      if (input.phone !== undefined) profileUpdates.phone = input.phone.trim() || null;
+
+      if (Object.keys(profileUpdates).length > 0) {
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({ ...profileUpdates, updated_at: new Date().toISOString() })
+          .eq("id", user.id);
+
+        if (profileError) throw profileError;
+      }
+
+      await loadProfile();
+      return { error: null };
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error("Unable to update profile.");
+      return { error };
+    }
+  }
+
+  async function changePassword(newPassword: string) {
+    try {
+      if (!newPassword || newPassword.length < 6) {
+        throw new Error("Password must be at least 6 characters long.");
+      }
+
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      return { error: null };
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error("Unable to change password.");
+      return { error };
+    }
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
     setUser(null);
@@ -131,7 +184,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await loadProfile();
   }
 
-  const role: UserRole | null = profile?.role ?? ((user?.user_metadata?.role as UserRole | undefined) ?? null);
+  const staffRole: StaffRole | null = profile?.staff_role ?? null;
+  const role: UserRole | null = profile?.staff_role === "president"
+    ? "admin"
+    : (profile?.role ?? null);
 
   return (
     <AuthContext.Provider
@@ -140,9 +196,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         session,
         profile,
         role,
+        staffRole,
         isLoading,
         signIn,
         signUp,
+        updateProfileData,
+        changePassword,
         signOut,
         refreshProfile,
       }}

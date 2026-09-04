@@ -39,13 +39,17 @@ export async function getCurrentProfile(): Promise<Profile | null> {
     return {
       id: user.id,
       email: user.email || "",
+      username: (user.user_metadata?.username as string | undefined) ?? null,
       full_name: user.user_metadata?.full_name || "Utilizador MyTeacher",
-      role: (user.user_metadata?.role as Profile["role"]) || "student",
+      role: "student",
       country_code: "ao",
     };
   }
 
-  return data as Profile;
+  return {
+    ...(data as Profile),
+    username: (data as Profile)?.username ?? ((user.user_metadata?.username as string | undefined) ?? null),
+  } as Profile;
 }
 
 export async function updateProfile(id: string, updates: Partial<Profile>): Promise<Profile> {

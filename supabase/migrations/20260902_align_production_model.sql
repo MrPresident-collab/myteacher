@@ -85,10 +85,43 @@ ALTER TABLE public.teacher_language_verification_videos ENABLE ROW LEVEL SECURIT
 CREATE INDEX IF NOT EXISTS idx_teacher_language_videos_teacher_status
   ON public.teacher_language_verification_videos (teacher_id, status, created_at DESC);
 
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name, role, staff_role, country_code)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', 'Utilizador MyTeacher'),
+    CASE WHEN NEW.raw_user_meta_data->>'role' = 'teacher' THEN 'teacher'::user_role ELSE 'student'::user_role END,
+    NULL,
+    'ao'
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    full_name = EXCLUDED.full_name,
+    email = EXCLUDED.email,
+    role = EXCLUDED.role,
+    staff_role = EXCLUDED.staff_role;
+
+  IF NEW.raw_user_meta_data->>'role' <> 'teacher' THEN
+    INSERT INTO public.learner_profiles (id)
+    VALUES (NEW.id)
+    ON CONFLICT (id) DO NOTHING;
+  ELSIF NEW.raw_user_meta_data->>'role' = 'teacher' THEN
+    INSERT INTO public.teacher_profiles (id, verification_status)
+    VALUES (NEW.id, 'submitted')
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 CREATE OR REPLACE FUNCTION public.prevent_protected_profile_changes()
 RETURNS TRIGGER AS $$
 BEGIN
   IF (NEW.role IS DISTINCT FROM OLD.role OR NEW.staff_role IS DISTINCT FROM OLD.staff_role)
+    AND current_user NOT IN ('postgres', 'service_role')
     AND NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND staff_role = 'president') THEN
     RAISE EXCEPTION 'Only the President can change privileged roles.';
   END IF;
