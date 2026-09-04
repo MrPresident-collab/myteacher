@@ -697,6 +697,18 @@ ALTER TABLE public.quiz_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quiz_results ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.learning_progress ENABLE ROW LEVEL SECURITY;
 
+CREATE OR REPLACE FUNCTION public.is_privileged_staff()
+RETURNS BOOLEAN
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND (role = 'admin' OR staff_role IN ('president', 'admin'))
+  );
+$$;
+
 -- Public read policies
 CREATE POLICY "Public read active languages" ON public.languages FOR SELECT USING (active = true);
 CREATE POLICY "Public read regional markets" ON public.regional_markets FOR SELECT USING (true);
@@ -753,9 +765,7 @@ CREATE POLICY "President manages platform settings" ON public.platform_settings 
 );
 
 -- Admin full access
-CREATE POLICY "Admins have full access on profiles" ON public.profiles FOR ALL USING (
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-);
+CREATE POLICY "Admins have full access on profiles" ON public.profiles FOR ALL USING (public.is_privileged_staff());
 CREATE POLICY "Admins have full access on teacher_profiles" ON public.teacher_profiles FOR ALL USING (
   EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
 );

@@ -135,6 +135,22 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+CREATE OR REPLACE FUNCTION public.is_privileged_staff()
+RETURNS BOOLEAN
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND (role = 'admin' OR staff_role IN ('president', 'admin'))
+  );
+$$;
+
+DROP POLICY IF EXISTS "Admins have full access on profiles" ON public.profiles;
+CREATE POLICY "Admins have full access on profiles"
+  ON public.profiles FOR ALL USING (public.is_privileged_staff());
+
 CREATE OR REPLACE FUNCTION public.prevent_teacher_video_self_review()
 RETURNS TRIGGER AS $$
 BEGIN
